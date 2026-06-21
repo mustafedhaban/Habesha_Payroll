@@ -1,0 +1,15 @@
+{
+  "name": "habesha-payroll",
+  "version": "0.1.0",
+  "description": "Ethiopian payroll & tax compliance MVP — PAYE + pension engine for Proclamation No. 1395/2026",
+  "type": "commonjs",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {}
+}

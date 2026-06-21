@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Habesha Payroll — Sign in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <div class="auth-page">
+    <div class="auth-card">
+      <div class="seal-mark"><span>℞</span></div>
+      <h1>Habesha Payroll</h1>
+      <p class="subtitle">PAYE &amp; pension, calculated correctly — updated the moment ERCA changes the rules.</p>
+
+      <div class="auth-tabs">
+        <button id="tab-login" class="active" type="button">Sign in</button>
+        <button id="tab-register" type="button">Register company</button>
+      </div>
+
+      <div id="alert" class="alert-banner error hidden"></div>
+
+      <form id="form-login">
+        <div class="field">
+          <label for="login-email">Work email</label>
+          <input type="email" id="login-email" required autocomplete="email" />
+        </div>
+        <div class="field">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" required autocomplete="current-password" />
+        </div>
+        <button type="submit" class="btn" id="login-submit">Sign in</button>
+      </form>
+
+      <form id="form-register" class="hidden">
+        <div class="field">
+          <label for="reg-company">Company name</label>
+          <input type="text" id="reg-company" required placeholder="e.g. Adwa Trading PLC" />
+        </div>
+        <div class="field">
+          <label for="reg-name">Your name</label>
+          <input type="text" id="reg-name" placeholder="e.g. Selam Tesfaye" />
+        </div>
+        <div class="field">
+          <label for="reg-email">Work email</label>
+          <input type="email" id="reg-email" required autocomplete="email" />
+        </div>
+        <div class="field">
+          <label for="reg-password">Password</label>
+          <input type="password" id="reg-password" required minlength="8" autocomplete="new-password" />
+          <div class="help-text">At least 8 characters.</div>
+        </div>
+        <button type="submit" class="btn btn-accent" id="register-submit">Create account</button>
+      </form>
+
+      <div class="auth-footnote">RATE SCHEDULE: PROCLAMATION NO. 1395/2026</div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/login.js"></script>
+</body>
+</html>
