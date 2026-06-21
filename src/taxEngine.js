@@ -28,6 +28,14 @@ const PENSION_RATE_EMPLOYEE = 0.07;
 const PENSION_RATE_EMPLOYER = 0.11;
 const PENSION_BASE_CAP = 15000; // ETB — contribution is computed on min(gross, cap)
 
+// Transport allowance exemption (Ministry of Revenue / ex-ERCA directive,
+// unchanged by the 2026 income-tax bracket reform). The allowance is
+// non-taxable up to the LOWER of a flat monthly cap and a percentage of the
+// employee's basic salary; any excess is taxable income. Pension is NOT
+// affected — it is always computed on basic salary only.
+const TRANSPORT_EXEMPT_CAP = 2200; // ETB/month absolute cap
+const TRANSPORT_EXEMPT_BASIC_RATE = 0.25; // or 25% of basic salary, whichever is lower
+
 /**
  * Monthly PAYE brackets, expressed in the standard Ethiopian payroll
  * shorthand: tax = grossSalary * rate - deduction.
@@ -87,26 +95,59 @@ function calculatePension(grossSalary, isPensionExempt = false) {
 }
 
 /**
+ * Compute the non-taxable (exempt) portion of a transport allowance:
+ * the lower of the flat monthly cap and 25% of basic salary.
+ * @param {number} transportAllowance
+ * @param {number} basicSalary
+ * @returns {number} exempt amount in ETB, rounded to 2 decimals
+ */
+function exemptTransportAllowance(transportAllowance, basicSalary) {
+  const allowance = Number(transportAllowance) || 0;
+  const basic = Number(basicSalary) || 0;
+  if (allowance <= 0 || basic <= 0) return 0;
+  return round2(
+    Math.min(allowance, TRANSPORT_EXEMPT_CAP, basic * TRANSPORT_EXEMPT_BASIC_RATE)
+  );
+}
+
+/**
  * Full monthly payroll calculation for one employee.
  * @param {object} employee
- * @param {number} employee.grossSalary
+ * @param {number} [employee.basicSalary] - monthly basic salary in ETB.
+ *   For backward compatibility, `grossSalary` is accepted as an alias when
+ *   `basicSalary` is absent (pre-A1 records had no separate allowance).
+ * @param {number} [employee.transportAllowance] - monthly transport allowance
+ *   in ETB; the statutory-exempt portion is excluded from taxable income.
  * @param {boolean} [employee.isPensionExempt]
- * @param {number} [employee.allowanceNonTaxable] - e.g. transport allowance
- *   up to the statutory non-taxable limit. Left at 0 for MVP; gross-only.
  */
 function calculatePayroll(employee) {
-  const gross = Number(employee.grossSalary) || 0;
-  const incomeTax = calculateIncomeTax(gross);
-  const pension = calculatePension(gross, Boolean(employee.isPensionExempt));
-  const netPay = round2(gross - incomeTax - pension.employee);
+  const basicSalary =
+    Number(employee.basicSalary != null ? employee.basicSalary : employee.grossSalary) || 0;
+  const transportAllowance = Number(employee.transportAllowance) || 0;
+
+  const exemptTransport = exemptTransportAllowance(transportAllowance, basicSalary);
+  const taxableTransport = round2(transportAllowance - exemptTransport);
+  const taxableIncome = round2(basicSalary + taxableTransport);
+
+  const incomeTax = calculateIncomeTax(taxableIncome);
+  // Pension is computed on basic salary only — allowances are excluded.
+  const pension = calculatePension(basicSalary, Boolean(employee.isPensionExempt));
+
+  const grossPay = round2(basicSalary + transportAllowance);
+  const netPay = round2(grossPay - incomeTax - pension.employee);
 
   return {
     rateVersion: RATE_VERSION,
-    grossSalary: round2(gross),
+    basicSalary: round2(basicSalary),
+    transportAllowance: round2(transportAllowance),
+    exemptTransport,
+    taxableTransport,
+    taxableIncome,
+    grossPay,
     incomeTax,
     employeePension: pension.employee,
     employerPension: pension.employer,
-    totalEmployerCost: round2(gross + pension.employer),
+    totalEmployerCost: round2(grossPay + pension.employer),
     netPay,
   };
 }
@@ -116,8 +157,11 @@ module.exports = {
   PENSION_RATE_EMPLOYEE,
   PENSION_RATE_EMPLOYER,
   PENSION_BASE_CAP,
+  TRANSPORT_EXEMPT_CAP,
+  TRANSPORT_EXEMPT_BASIC_RATE,
   PAYE_BRACKETS,
   calculateIncomeTax,
   calculatePension,
+  exemptTransportAllowance,
   calculatePayroll,
 };

@@ -1,0 +1,61 @@
+---
+description: Habesha Payroll compliance and build-order rules for autonomous agent work
+alwaysApply: true
+---
+
+# Habesha Payroll — Agent Rules
+
+This is a compliance product (Ethiopian payroll tax calculations). Wrong output here has real consequences for real businesses. Follow these rules exactly, even when working autonomously.
+
+## Frontend (React)
+
+The UI lives in `web/` (Vite + React + TypeScript). The Node backend is unchanged.
+
+**Development (two terminals):**
+1. `npm start` — API server on http://localhost:3000
+2. `npm run dev:web` — Vite dev server on http://localhost:5173 (proxies `/api` to :3000)
+
+**Production:** `npm run build:web` then `npm start` — serves `web/dist` with SPA fallback.
+
+Do not add page-level API calls outside `web/src/lib/api.ts` and auth hooks. Preserve existing CSS design tokens in `web/src/index.css`.
+
+## Core rules
+
+1. **Test-first tax engine changes.** Before changing `src/taxEngine.js`, always write/update the test cases in `test/taxEngine.test.js` FIRST, then implement, then run `npm test`.
+2. **Never modify verified tax constants.** Never modify the PAYE bracket table or pension rates unless explicitly told the rule itself has changed — these came from verified ERCA sources, not assumptions.
+3. **One feature per commit.** After every feature: run `npm test`, then `git add . && git commit -m "..."` with a clear message. One feature per commit. Never bundle multiple features into one commit.
+4. **Follow the build plan in order.** Work through `habesha-payroll-build-plan.md` in order: A1 → A2 → A3 → A4 → A5 → A6. Don't skip ahead or combine items.
+5. **Stop between items.** After finishing each item, summarize what changed and what you tested, then stop and wait before starting the next item.
+6. **Ask when ambiguous.** If a task is ambiguous, ask rather than guessing — especially anything involving money, dates, or tax rules.
+
+## Session workflow
+
+When implementing a build-plan item:
+
+1. Reference `@habesha-payroll-build-plan.md`, `@src/taxEngine.js`, and `@test/taxEngine.test.js`.
+2. Write test cases first, then implementation, then run `npm test` and show results before committing.
+3. Wait for human review of the diff before committing unless explicitly told to commit.
+
+### A1 review checkpoint (mandatory)
+
+Before committing transport allowance logic, show three worked examples:
+
+- Employee with a small allowance fully exempt
+- Employee where the ETB 2,200 cap binds
+- Employee where the 25%-of-basic cap binds instead
+
+Human must verify numbers against the build plan before commit.
+
+## Phase B (after Phase A is complete)
+
+Proceed in order; loop in the human for external-service decisions:
+
+1. Replace `node:sqlite` in `src/db.js` with `better-sqlite3` (same schema), then run `npm test`.
+2. Add PDFKit for real payslips.
+3. Deployment (Render/Railway — connect to GitHub repo after push).
+
+## Terminal autonomy
+
+**Auto-run allowed:** `npm test`, `npm start`, `git add`, `git status`, `git diff`
+
+**Ask first:** `git commit`, `git push`, anything with `rm`, anything touching `.env` or `package.json` dependencies

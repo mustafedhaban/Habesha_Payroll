@@ -29,10 +29,18 @@ function createSession(userId, companyId) {
   return { token, expiresAt };
 }
 
+function randomToken(bytes = 32) {
+  return crypto.randomBytes(bytes).toString('hex');
+}
+
 function getSession(token) {
   if (!token) return null;
   const row = db
-    .prepare('SELECT * FROM sessions WHERE token = ?')
+    .prepare(
+      `SELECT s.token, s.user_id, s.company_id, s.expires_at, u.role
+       FROM sessions s JOIN users u ON u.id = s.user_id
+       WHERE s.token = ?`
+    )
     .get(token);
   if (!row) return null;
   if (new Date(row.expires_at).getTime() < Date.now()) {
@@ -87,6 +95,7 @@ function authenticate(req) {
 module.exports = {
   hashPassword,
   verifyPassword,
+  randomToken,
   createSession,
   getSession,
   destroySession,

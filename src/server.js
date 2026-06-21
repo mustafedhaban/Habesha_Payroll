@@ -9,9 +9,12 @@ const { sendError, readJSONBody } = require('./http-utils');
 const authRoutes = require('./routes/auth');
 const employeeRoutes = require('./routes/employees');
 const payrollRoutes = require('./routes/payroll');
+const teamRoutes = require('./routes/team');
+const rateScheduleRoutes = require('./routes/rateSchedule');
+const activityRoutes = require('./routes/activity');
 
 const PORT = process.env.PORT || 3000;
-const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const PUBLIC_DIR = path.join(__dirname, '..', 'web', 'dist');
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -25,7 +28,7 @@ const MIME_TYPES = {
 
 function serveStatic(req, res, pathname) {
   let filePath = pathname === '/' ? '/index.html' : pathname;
-  // Prevent path traversal outside the public directory
+  // Prevent path traversal outside the build directory
   const safePath = path.normalize(filePath).replace(/^(\.\.[/\\])+/, '');
   const fullPath = path.join(PUBLIC_DIR, safePath);
 
@@ -36,8 +39,22 @@ function serveStatic(req, res, pathname) {
 
   fs.readFile(fullPath, (err, data) => {
     if (err) {
-      res.writeHead(404, { 'Content-Type': 'text/plain' });
-      return res.end('Not found');
+      // SPA fallback — client routes like /dashboard have no matching file
+      if (path.extname(safePath)) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        return res.end('Not found');
+      }
+      const indexPath = path.join(PUBLIC_DIR, 'index.html');
+      return fs.readFile(indexPath, (indexErr, indexData) => {
+        if (indexErr) {
+          res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
+          return res.end(
+            'Frontend not built. Run: npm run build:web\nThen restart the server.',
+          );
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(indexData);
+      });
     }
     const ext = path.extname(fullPath);
     res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
@@ -64,6 +81,18 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/auth/me' && method === 'GET') {
       return authRoutes.me(req, res);
     }
+    if (pathname === '/api/auth/forgot-password' && method === 'POST') {
+      return await authRoutes.forgotPassword(req, res);
+    }
+    if (pathname === '/api/auth/reset-password' && method === 'POST') {
+      return await authRoutes.resetPassword(req, res);
+    }
+    if (pathname === '/api/auth/invite' && method === 'GET') {
+      return authRoutes.getInvite(req, res, parsed.query.token || '');
+    }
+    if (pathname === '/api/auth/accept-invite' && method === 'POST') {
+      return await authRoutes.acceptInvite(req, res);
+    }
 
     // ---- Employees ----
     if (pathname === '/api/employees' && method === 'GET') {
@@ -71,6 +100,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === '/api/employees' && method === 'POST') {
       return await employeeRoutes.create(req, res);
+    }
+    if (pathname === '/api/employees/import' && method === 'POST') {
+      return await employeeRoutes.importEmployees(req, res);
     }
     let m = pathname.match(/^\/api\/employees\/(\d+)$/);
     if (m && method === 'PUT') {
@@ -107,6 +139,27 @@ const server = http.createServer(async (req, res) => {
     m = pathname.match(/^\/api\/payroll\/runs\/(\d+)\/payslip\/(\d+)$/);
     if (m && method === 'GET') {
       return payrollRoutes.payslip(req, res, Number(m[1]), Number(m[2]));
+    }
+
+    // ---- Team (multi-user roles) ----
+    if (pathname === '/api/team' && method === 'GET') {
+      return teamRoutes.list(req, res);
+    }
+    if (pathname === '/api/team/invite' && method === 'POST') {
+      return await teamRoutes.invite(req, res);
+    }
+
+    // ---- Rate-schedule verification ----
+    if (pathname === '/api/rate-schedule' && method === 'GET') {
+      return rateScheduleRoutes.get(req, res);
+    }
+    if (pathname === '/api/rate-schedule/verify' && method === 'POST') {
+      return await rateScheduleRoutes.verify(req, res);
+    }
+
+    // ---- Activity / audit log ----
+    if (pathname === '/api/activity' && method === 'GET') {
+      return activityRoutes.list(req, res);
     }
 
     // ---- Static frontend ----

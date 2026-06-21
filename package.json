@@ -6,7 +6,9 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "dev:web": "npm run dev --prefix web",
+    "build:web": "npm install --prefix web && npm run build --prefix web"
   },
   "engines": {
     "node": ">=22.5.0"

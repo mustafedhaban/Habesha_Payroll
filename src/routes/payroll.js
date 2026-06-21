@@ -1,8 +1,9 @@
 'use strict';
 
 const db = require('../db');
-const auth = require('../auth');
+const audit = require('../audit');
 const taxEngine = require('../taxEngine');
+const { requireSession, requireAdmin } = require('./guards');
 const { sendJSON, sendError } = require('../http-utils');
 
 const MONTH_NAMES = [
@@ -10,18 +11,9 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-function requireSession(req, res) {
-  const session = auth.authenticate(req);
-  if (!session) {
-    sendError(res, 401, 'Not signed in.');
-    return null;
-  }
-  return session;
-}
-
 /** Run payroll for a given month/year across all active employees. */
 async function runPayroll(req, res, body) {
-  const session = requireSession(req, res);
+  const session = requireAdmin(req, res);
   if (!session) return;
 
   const month = Number(body.month);
@@ -65,13 +57,15 @@ async function runPayroll(req, res, body) {
 
   const insertItem = db.prepare(
     `INSERT INTO payroll_items
-      (payroll_run_id, employee_id, employee_name, position, gross_salary, income_tax, employee_pension, employer_pension, net_pay)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (payroll_run_id, employee_id, employee_name, position, basic_salary, transport_allowance,
+       exempt_transport, taxable_transport, gross_salary, income_tax, employee_pension, employer_pension, net_pay)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   const items = employees.map((emp) => {
     const calc = taxEngine.calculatePayroll({
-      grossSalary: emp.gross_salary,
+      basicSalary: emp.basic_salary,
+      transportAllowance: emp.transport_allowance,
       isPensionExempt: Boolean(emp.is_pension_exempt),
     });
     insertItem.run(
@@ -79,7 +73,11 @@ async function runPayroll(req, res, body) {
       emp.id,
       emp.full_name,
       emp.position,
-      calc.grossSalary,
+      calc.basicSalary,
+      calc.transportAllowance,
+      calc.exemptTransport,
+      calc.taxableTransport,
+      calc.grossPay,
       calc.incomeTax,
       calc.employeePension,
       calc.employerPension,
@@ -90,15 +88,25 @@ async function runPayroll(req, res, body) {
 
   const totals = items.reduce(
     (acc, it) => ({
-      grossSalary: acc.grossSalary + it.grossSalary,
+      basicSalary: acc.basicSalary + it.basicSalary,
+      transportAllowance: acc.transportAllowance + it.transportAllowance,
+      grossPay: acc.grossPay + it.grossPay,
       incomeTax: acc.incomeTax + it.incomeTax,
       employeePension: acc.employeePension + it.employeePension,
       employerPension: acc.employerPension + it.employerPension,
       netPay: acc.netPay + it.netPay,
     }),
-    { grossSalary: 0, incomeTax: 0, employeePension: 0, employerPension: 0, netPay: 0 }
+    {
+      basicSalary: 0, transportAllowance: 0, grossPay: 0, incomeTax: 0,
+      employeePension: 0, employerPension: 0, netPay: 0,
+    }
   );
 
+  audit.record(
+    session,
+    'payroll.run',
+    `Ran payroll for ${MONTH_NAMES[month - 1]} ${year} (${items.length} employee(s))`
+  );
   sendJSON(res, 201, { runId, month, year, items, totals });
 }
 
@@ -152,7 +160,7 @@ function getRun(req, res, runId) {
 }
 
 function deleteRun(req, res, runId) {
-  const session = requireSession(req, res);
+  const session = requireAdmin(req, res);
   if (!session) return;
 
   const run = getRunOr404(session, runId, res);
@@ -160,6 +168,11 @@ function deleteRun(req, res, runId) {
 
   db.prepare('DELETE FROM payroll_items WHERE payroll_run_id = ?').run(runId);
   db.prepare('DELETE FROM payroll_runs WHERE id = ?').run(runId);
+  audit.record(
+    session,
+    'payroll.deleted',
+    `Deleted payroll run for ${MONTH_NAMES[run.period_month - 1]} ${run.period_year}`
+  );
   sendJSON(res, 200, { ok: true });
 }
 
@@ -184,21 +197,21 @@ function exportRunCSV(req, res, runId) {
     .all(runId);
 
   const header = [
-    'Employee Name', 'Position', 'Gross Salary (ETB)', 'Income Tax / PAYE (ETB)',
+    'Employee Name', 'Position', 'Basic Salary (ETB)', 'Transport Allowance (ETB)',
+    'Taxable Transport (ETB)', 'Gross Pay (ETB)', 'Income Tax / PAYE (ETB)',
     'Employee Pension 7% (ETB)', 'Employer Pension 11% (ETB)', 'Net Pay (ETB)',
   ];
   const rows = items.map((it) => [
-    it.employee_name, it.position || '', it.gross_salary.toFixed(2),
-    it.income_tax.toFixed(2), it.employee_pension.toFixed(2),
+    it.employee_name, it.position || '', it.basic_salary.toFixed(2),
+    it.transport_allowance.toFixed(2), it.taxable_transport.toFixed(2),
+    it.gross_salary.toFixed(2), it.income_tax.toFixed(2), it.employee_pension.toFixed(2),
     it.employer_pension.toFixed(2), it.net_pay.toFixed(2),
   ]);
+  const sum = (key) => items.reduce((s, i) => s + i[key], 0).toFixed(2);
   const totalsRow = [
-    'TOTAL', '',
-    items.reduce((s, i) => s + i.gross_salary, 0).toFixed(2),
-    items.reduce((s, i) => s + i.income_tax, 0).toFixed(2),
-    items.reduce((s, i) => s + i.employee_pension, 0).toFixed(2),
-    items.reduce((s, i) => s + i.employer_pension, 0).toFixed(2),
-    items.reduce((s, i) => s + i.net_pay, 0).toFixed(2),
+    'TOTAL', '', sum('basic_salary'), sum('transport_allowance'),
+    sum('taxable_transport'), sum('gross_salary'), sum('income_tax'),
+    sum('employee_pension'), sum('employer_pension'), sum('net_pay'),
   ];
 
   const lines = [header, ...rows, totalsRow].map((r) => r.map(csvEscape).join(','));
@@ -235,9 +248,30 @@ function payslip(req, res, runId, employeeId) {
 <head>
 <meta charset="UTF-8" />
 <title>Payslip — ${item.employee_name} — ${periodLabel}</title>
-<link rel="stylesheet" href="/css/styles.css" />
 <style>
-  body { background: var(--color-bg); padding: 40px 16px; }
+  :root {
+    --color-bg: #FAF7F0;
+    --color-surface: #FFFFFF;
+    --color-ink: #1B2421;
+    --color-muted: #6B7268;
+    --color-border: #DDD6C6;
+    --color-primary: #0F3D3E;
+    --color-primary-hover: #0A2D2E;
+    --color-accent: #C97A2B;
+    --color-alert: #B23A2E;
+    --font-display: 'Space Grotesk', 'Segoe UI', sans-serif;
+    --font-body: 'Inter', 'Segoe UI', sans-serif;
+    --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--color-bg); color: var(--color-ink); font-family: var(--font-body); padding: 40px 16px; }
+  h1 { font-family: var(--font-display); }
+  .btn {
+    display: inline-block; background: var(--color-primary); color: #fff; border: 1px solid var(--color-primary);
+    border-radius: 4px; padding: 9px 16px; font-family: var(--font-body); font-size: 14px; font-weight: 600;
+    cursor: pointer;
+  }
+  .btn:hover { background: var(--color-primary-hover); }
   .payslip { max-width: 640px; margin: 0 auto; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 4px; padding: 40px; position: relative; }
   .payslip-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid var(--color-ink); padding-bottom: 16px; margin-bottom: 24px; }
   .payslip-header h1 { font-size: 20px; margin: 0 0 4px; }
@@ -269,7 +303,15 @@ function payslip(req, res, runId, employeeId) {
       <strong>${item.employee_name}</strong>${item.position ? ` · ${item.position}` : ''}
     </div>
     <table class="payslip-table">
-      <tr><td>Gross Salary</td><td class="amount">ETB ${fmt(item.gross_salary)}</td></tr>
+      <tr><td>Basic Salary</td><td class="amount">ETB ${fmt(item.basic_salary)}</td></tr>
+      ${
+        item.transport_allowance > 0
+          ? `<tr><td>Transport Allowance</td><td class="amount">ETB ${fmt(item.transport_allowance)}</td></tr>
+      <tr><td style="padding-left:18px; color:var(--color-muted); font-size:13px;">· Non-taxable portion</td><td class="amount" style="font-size:13px;">ETB ${fmt(item.exempt_transport)}</td></tr>
+      <tr><td style="padding-left:18px; color:var(--color-muted); font-size:13px;">· Taxable portion</td><td class="amount" style="font-size:13px;">ETB ${fmt(item.taxable_transport)}</td></tr>`
+          : ''
+      }
+      <tr><td><strong>Gross Pay</strong></td><td class="amount"><strong>ETB ${fmt(item.gross_salary)}</strong></td></tr>
       <tr class="deduction"><td>Income Tax (PAYE)</td><td class="amount">− ETB ${fmt(item.income_tax)}</td></tr>
       <tr class="deduction"><td>Employee Pension (7%)</td><td class="amount">− ETB ${fmt(item.employee_pension)}</td></tr>
       <tr class="net"><td>Net Pay</td><td class="amount">ETB ${fmt(item.net_pay)}</td></tr>
