@@ -2,6 +2,7 @@ import { type FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Api } from '@/lib/api';
 import { useAuth } from '@/hooks/use-auth';
+import { IconCheck, IconShield, IconWallet } from '@/components/ui/Icons';
 import type { Session } from '@/types';
 
 type AuthTab = 'login' | 'register';
@@ -55,120 +56,161 @@ export function LoginPage() {
 
   return (
     <div className="auth-page">
-      <div className="auth-card">
+      <div className="auth-panel">
         <div className="seal-mark">
-          <span>℞</span>
+          <span>ሀ</span>
         </div>
         <h1>Habesha Payroll</h1>
         <p className="subtitle">
-          PAYE &amp; pension, calculated correctly — updated the moment ERCA
+          Ethiopian PAYE &amp; pension — calculated correctly, updated when ERCA
           changes the rules.
         </p>
 
-        <div className="auth-tabs">
-          <button
-            type="button"
-            className={tab === 'login' ? 'active' : undefined}
-            onClick={() => {
-              setTab('login');
-              setError('');
-            }}
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            className={tab === 'register' ? 'active' : undefined}
-            onClick={() => {
-              setTab('register');
-              setError('');
-            }}
-          >
-            Register company
-          </button>
+        <div className="auth-panel-features">
+          <div className="auth-feature">
+            <div className="auth-feature-icon">
+              <IconShield width={20} height={20} />
+            </div>
+            <div>
+              <strong>ERCA-compliant calculations</strong>
+              <span>Verified rate schedules, not guesswork.</span>
+            </div>
+          </div>
+          <div className="auth-feature">
+            <div className="auth-feature-icon">
+              <IconWallet width={20} height={20} />
+            </div>
+            <div>
+              <strong>Full payroll runs</strong>
+              <span>PAYE, pension, transport allowance — all handled.</span>
+            </div>
+          </div>
+          <div className="auth-feature">
+            <div className="auth-feature-icon">
+              <IconCheck width={20} height={20} />
+            </div>
+            <div>
+              <strong>Audit-ready activity log</strong>
+              <span>Every action tracked for compliance peace of mind.</span>
+            </div>
+          </div>
         </div>
+      </div>
 
-        {error ? <div className="alert-banner error">{error}</div> : null}
+      <div className="auth-form-side">
+        <div className="auth-card">
+          <h2>{tab === 'login' ? 'Welcome back' : 'Create your workspace'}</h2>
+          <p className="subtitle">
+            {tab === 'login'
+              ? 'Sign in to your company payroll command center.'
+              : 'Register your company and start managing payroll in minutes.'}
+          </p>
 
-        {tab === 'login' ? (
-          <form onSubmit={handleLogin}>
-            <div className="field">
-              <label htmlFor="login-email">Work email</label>
-              <input
-                type="email"
-                id="login-email"
-                name="email"
-                required
-                autoComplete="email"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="login-password">Password</label>
-              <input
-                type="password"
-                id="login-password"
-                name="password"
-                required
-                autoComplete="current-password"
-              />
-            </div>
-            <button type="submit" className="btn" disabled={submitting}>
+          <div className="auth-tabs">
+            <button
+              type="button"
+              className={tab === 'login' ? 'active' : undefined}
+              onClick={() => {
+                setTab('login');
+                setError('');
+              }}
+            >
               Sign in
             </button>
-            <div className="help-text" style={{ marginTop: 12, textAlign: 'center' }}>
-              <Link to="/forgot-password">Forgot your password?</Link>
-            </div>
-          </form>
-        ) : (
-          <form onSubmit={handleRegister}>
-            <div className="field">
-              <label htmlFor="reg-company">Company name</label>
-              <input
-                type="text"
-                id="reg-company"
-                name="companyName"
-                required
-                placeholder="e.g. Adwa Trading PLC"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="reg-name">Your name</label>
-              <input
-                type="text"
-                id="reg-name"
-                name="fullName"
-                placeholder="e.g. Selam Tesfaye"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="reg-email">Work email</label>
-              <input
-                type="email"
-                id="reg-email"
-                name="email"
-                required
-                autoComplete="email"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="reg-password">Password</label>
-              <input
-                type="password"
-                id="reg-password"
-                name="password"
-                required
-                minLength={8}
-                autoComplete="new-password"
-              />
-              <div className="help-text">At least 8 characters.</div>
-            </div>
-            <button type="submit" className="btn btn-accent" disabled={submitting}>
-              Create account
+            <button
+              type="button"
+              className={tab === 'register' ? 'active' : undefined}
+              onClick={() => {
+                setTab('register');
+                setError('');
+              }}
+            >
+              Register company
             </button>
-          </form>
-        )}
+          </div>
 
-        <div className="auth-footnote">RATE SCHEDULE: PROCLAMATION NO. 1395/2026</div>
+          {error ? <div className="alert-banner error">{error}</div> : null}
+
+          {tab === 'login' ? (
+            <form onSubmit={handleLogin}>
+              <div className="field">
+                <label htmlFor="login-email">Work email</label>
+                <input
+                  type="email"
+                  id="login-email"
+                  name="email"
+                  required
+                  autoComplete="email"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="login-password">Password</label>
+                <input
+                  type="password"
+                  id="login-password"
+                  name="password"
+                  required
+                  autoComplete="current-password"
+                />
+              </div>
+              <button type="submit" className="btn" disabled={submitting}>
+                Sign in
+              </button>
+              <div className="help-text" style={{ marginTop: 12, textAlign: 'center' }}>
+                <Link to="/forgot-password">Forgot your password?</Link>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleRegister}>
+              <div className="field">
+                <label htmlFor="reg-company">Company name</label>
+                <input
+                  type="text"
+                  id="reg-company"
+                  name="companyName"
+                  required
+                  placeholder="e.g. Adwa Trading PLC"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="reg-name">Your name</label>
+                <input
+                  type="text"
+                  id="reg-name"
+                  name="fullName"
+                  placeholder="e.g. Selam Tesfaye"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="reg-email">Work email</label>
+                <input
+                  type="email"
+                  id="reg-email"
+                  name="email"
+                  required
+                  autoComplete="email"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="reg-password">Password</label>
+                <input
+                  type="password"
+                  id="reg-password"
+                  name="password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                />
+                <div className="help-text">At least 8 characters.</div>
+              </div>
+              <button type="submit" className="btn btn-accent" disabled={submitting}>
+                Create account
+              </button>
+            </form>
+          )}
+
+          <div className="auth-footnote">RATE SCHEDULE: PROCLAMATION NO. 1395/2026</div>
+        </div>
       </div>
     </div>
   );

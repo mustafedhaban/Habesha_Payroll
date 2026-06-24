@@ -2,8 +2,18 @@ import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { Api } from '@/lib/api';
 import { fmtMoney } from '@/lib/format';
 import { useAuth } from '@/hooks/use-auth';
+import { toAmharic } from '@/lib/translit';
+import { PageHero } from '@/components/layout/PageHero';
+import { IconShield, IconTrendUp, IconUsers, IconWallet } from '@/components/ui/Icons';
 import type { Employee, ImportPreview, ImportResult } from '@/types';
 
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? '')
+    .join('');
+}
 const CSV_TEMPLATE =
   'full_name,full_name_am,position,basic_salary,transport_allowance,is_pension_exempt,start_date\n' +
   'Abebe Kebede,አበበ ከበደ,Accountant,12000,1500,no,2024-01-15';
@@ -40,6 +50,9 @@ export function EmployeesPage() {
   const [form, setForm] = useState<EmployeeFormState>(emptyForm);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Tracks whether the Amharic field has been set manually; once it has, we
+  // stop auto-filling it from the Latin name so we never clobber an edit.
+  const [amTouched, setAmTouched] = useState(false);
 
   // A2: CSV import
   const [showImport, setShowImport] = useState(false);
@@ -61,11 +74,14 @@ export function EmployeesPage() {
   function openForm(id: number | null) {
     setEditingId(id);
     setShowForm(true);
+    setShowImport(false);
     setError('');
 
     if (id) {
       const emp = employees.find((e) => e.id === id);
       if (!emp) return;
+      // Treat an existing Amharic name as a manual value — don't overwrite it.
+      setAmTouched(Boolean(emp.full_name_am));
       setForm({
         fullName: emp.full_name,
         fullNameAm: emp.full_name_am || '',
@@ -77,6 +93,7 @@ export function EmployeesPage() {
         isPensionExempt: Boolean(emp.is_pension_exempt),
       });
     } else {
+      setAmTouched(false);
       setForm(emptyForm);
     }
   }
@@ -190,28 +207,69 @@ export function EmployeesPage() {
     }
   }
 
+  const activeCount = employees.filter((e) => e.employment_status === 'active').length;
+  const monthlyGross = employees
+    .filter((e) => e.employment_status === 'active')
+    .reduce((s, e) => s + e.basic_salary + e.transport_allowance, 0);
+  const exemptCount = employees.filter((e) => e.is_pension_exempt).length;
+
   return (
     <>
-      <div className="page-header page-header-row">
-        <div>
-          <h1>Employees</h1>
-          <p>
-            Add employees once — payroll recalculates PAYE and pension automatically
-            every run.
-          </p>
-        </div>
-        {isAdmin ? (
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button type="button" className="btn btn-secondary" onClick={openImport}>
-              Import CSV
-            </button>
-            <button type="button" className="btn btn-accent" onClick={() => openForm(null)}>
-              + Add employee
-            </button>
+      <PageHero
+        eyebrow="Identity Directory"
+        title="Employees"
+        description="Manage your workforce roster, salaries, and pension status."
+        actions={
+          isAdmin ? (
+            <>
+              <button type="button" className="btn btn-secondary" onClick={openImport}>
+                Import CSV
+              </button>
+              <button type="button" className="btn" onClick={() => openForm(null)}>
+                + Add employee
+              </button>
+            </>
+          ) : (
+            <span className="badge badge-viewer">View-only access</span>
+          )
+        }
+        variant="gradient"
+      />
+
+      <div className="stat-grid">
+        <div className="stat-card">
+          <div className="stat-card-icon teal">
+            <IconUsers width={22} height={22} />
           </div>
-        ) : (
-          <span className="badge badge-muted">View-only access</span>
-        )}
+          <div className="stat-card-body">
+            <div className="label">Total employees</div>
+            <div className="value">{employees.length}</div>
+            <div className="stat-card-trend up">
+              <IconTrendUp width={14} height={14} />
+              {activeCount} active
+            </div>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-icon green">
+            <IconWallet width={22} height={22} />
+          </div>
+          <div className="stat-card-body">
+            <div className="label">Monthly gross</div>
+            <div className="value">ETB {fmtMoney(monthlyGross)}</div>
+            <div className="stat-card-trend neutral">Active roster total</div>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-icon blue">
+            <IconShield width={22} height={22} />
+          </div>
+          <div className="stat-card-body">
+            <div className="label">Pension exempt</div>
+            <div className="value">{exemptCount}</div>
+            <div className="stat-card-trend neutral">Foreign nationals</div>
+          </div>
+        </div>
       </div>
 
       {showImport && isAdmin ? (
@@ -227,9 +285,7 @@ export function EmployeesPage() {
             </button>
           </div>
           <p className="help-text" style={{ marginTop: 4 }}>
-            Columns: <code>full_name, full_name_am, position, basic_salary,
-            transport_allowance, is_pension_exempt, start_date</code>. Only{' '}
-            <code>full_name</code> and <code>basic_salary</code> are required.
+            Required: <code>full_name</code>, <code>basic_salary</code>.
           </p>
 
           {importError ? <div className="alert-banner error">{importError}</div> : null}
@@ -337,17 +393,28 @@ export function EmployeesPage() {
                   id="f-name"
                   required
                   value={form.fullName}
-                  onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setForm((f) => ({
+                      ...f,
+                      fullName: value,
+                      // Auto-transliterate until the user edits Amharic by hand.
+                      fullNameAm: amTouched ? f.fullNameAm : toAmharic(value),
+                    }));
+                  }}
                 />
               </div>
               <div className="field">
-                <label htmlFor="f-name-am">Full name (Amharic, optional)</label>
+                <label htmlFor="f-name-am">Full name (Amharic)</label>
                 <input
                   type="text"
                   id="f-name-am"
                   placeholder="ስም"
                   value={form.fullNameAm}
-                  onChange={(e) => setForm({ ...form, fullNameAm: e.target.value })}
+                  onChange={(e) => {
+                    setAmTouched(true);
+                    setForm((f) => ({ ...f, fullNameAm: e.target.value }));
+                  }}
                 />
               </div>
             </div>
@@ -466,12 +533,15 @@ export function EmployeesPage() {
               {employees.map((e) => (
                 <tr key={e.id}>
                   <td>
-                    {e.full_name}
-                    {e.full_name_am ? (
-                      <div className="text-muted" style={{ fontSize: 12 }}>
-                        {e.full_name_am}
+                    <div className="table-user">
+                      <div className="table-avatar">{initials(e.full_name)}</div>
+                      <div>
+                        <div className="table-user-name">{e.full_name}</div>
+                        {e.full_name_am ? (
+                          <div className="table-user-meta">{e.full_name_am}</div>
+                        ) : null}
                       </div>
-                    ) : null}
+                    </div>
                   </td>
                   <td>{e.position || '—'}</td>
                   <td className="amount">ETB {fmtMoney(e.basic_salary)}</td>

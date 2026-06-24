@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { PageHero } from '@/components/layout/PageHero';
 import { Link } from 'react-router-dom';
 import { Api } from '@/lib/api';
 import { fmtMoney, MONTH_NAMES } from '@/lib/format';
@@ -31,16 +32,14 @@ export function PayrollRunPage() {
 
   return (
     <>
-      <div className="page-header">
-        <h1>Run payroll</h1>
-        <p>
-          Computes PAYE income tax and pension for every active employee using rate
-          schedule 2026-Proclamation-1395.
-        </p>
-      </div>
+      <PageHero
+        eyebrow="Payroll Engine"
+        title="Run payroll"
+        description="Calculate PAYE, pension, and net pay for all active employees."
+        variant="gradient"
+      />
 
       <div className="card" style={{ maxWidth: 480 }}>
-        <h2>Select pay period</h2>
         {error ? <div className="alert-banner error">{error}</div> : null}
         <div className="field-row">
           <div className="field">
@@ -83,7 +82,7 @@ export function PayrollRunPage() {
               <span className="spinner"></span> Calculating…
             </>
           ) : (
-            'Run payroll for this period'
+            'Run payroll'
           )}
         </button>
       </div>
@@ -91,8 +90,7 @@ export function PayrollRunPage() {
       {result ? (
         <>
           <div className="alert-banner success">
-            Payroll run completed for {MONTH_NAMES[result.month - 1]} {result.year} —{' '}
-            {result.items.length} employee(s) processed.
+            {MONTH_NAMES[result.month - 1]} {result.year} payroll saved.
           </div>
 
           <div className="stat-grid">
@@ -154,10 +152,10 @@ export function PayrollRunPage() {
 
           <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
             <a href={`/api/payroll/runs/${result.runId}/export.csv`} className="btn">
-              Export CSV for ERCA / pension filing
+              Export for ERCA filing
             </a>
             <Link to="/payroll-history" className="btn btn-secondary">
-              View all payroll history
+              Payroll history
             </Link>
           </div>
         </>

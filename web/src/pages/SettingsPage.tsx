@@ -1,4 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
+import { PageHero } from '@/components/layout/PageHero';
 import { Api } from '@/lib/api';
 import { fmtDateTime } from '@/lib/format';
 import { useAuth } from '@/hooks/use-auth';
@@ -71,10 +72,12 @@ export function SettingsPage() {
 
   return (
     <>
-      <div className="page-header">
-        <h1>Settings</h1>
-        <p>Manage your team and confirm the tax rate schedule is current.</p>
-      </div>
+      <PageHero
+        eyebrow="Workspace Admin"
+        title="Settings"
+        description="Manage your team and confirm the tax rate schedule is current."
+        variant="gradient"
+      />
 
       {error ? <div className="alert-banner error">{error}</div> : null}
 

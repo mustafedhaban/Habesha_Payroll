@@ -250,15 +250,15 @@ function payslip(req, res, runId, employeeId) {
 <title>Payslip — ${item.employee_name} — ${periodLabel}</title>
 <style>
   :root {
-    --color-bg: #FAF7F0;
+    --color-bg: #F5F6F8;
     --color-surface: #FFFFFF;
-    --color-ink: #1B2421;
-    --color-muted: #6B7268;
-    --color-border: #DDD6C6;
-    --color-primary: #0F3D3E;
-    --color-primary-hover: #0A2D2E;
-    --color-accent: #C97A2B;
-    --color-alert: #B23A2E;
+    --color-ink: #131820;
+    --color-muted: #717886;
+    --color-border: #E8EAEF;
+    --color-primary: #0E5A54;
+    --color-primary-hover: #0B4843;
+    --color-accent: #C2772E;
+    --color-alert: #C4453A;
     --font-display: 'Space Grotesk', 'Segoe UI', sans-serif;
     --font-body: 'Inter', 'Segoe UI', sans-serif;
     --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;

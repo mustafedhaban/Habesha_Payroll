@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Api } from '@/lib/api';
 import { fmtDateTime } from '@/lib/format';
+import { PageHero } from '@/components/layout/PageHero';
+import { IconCheck, IconFile, IconUser } from '@/components/ui/Icons';
 import type { ActivityEntry } from '@/types';
 
 const ACTION_LABELS: Record<string, string> = {
@@ -13,6 +15,13 @@ const ACTION_LABELS: Record<string, string> = {
   'team.invited': 'Teammate invited',
   'rate_schedule.verified': 'Rate schedule verified',
 };
+
+function activityIcon(action: string) {
+  if (action.startsWith('payroll')) return 'success';
+  if (action.startsWith('employee')) return 'info';
+  if (action.includes('verified')) return 'warning';
+  return 'muted';
+}
 
 export function ActivityPage() {
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
@@ -28,14 +37,16 @@ export function ActivityPage() {
 
   return (
     <>
-      <div className="page-header">
-        <h1>Activity</h1>
-        <p>Who did what, and when — a record for compliance and peace of mind.</p>
-      </div>
+      <PageHero
+        eyebrow="Audit Trail"
+        title="Activity log"
+        description="Who did what, and when — a record for compliance and peace of mind."
+        variant="gradient"
+      />
 
       {error ? <div className="alert-banner error">{error}</div> : null}
 
-      <div className="card" style={{ padding: 0 }}>
+      <div className="card card-flat">
         {loading ? (
           <div className="empty-state"><p>Loading…</p></div>
         ) : entries.length === 0 ? (
@@ -44,30 +55,29 @@ export function ActivityPage() {
             <p>Actions like running payroll or editing employees will appear here.</p>
           </div>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Who</th>
-                <th>Action</th>
-                <th>Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e) => (
-                <tr key={e.id}>
-                  <td style={{ whiteSpace: 'nowrap' }}>{fmtDateTime(e.created_at)}</td>
-                  <td>{e.user_name || e.user_email || '—'}</td>
-                  <td>
-                    <span className="badge badge-muted">
-                      {ACTION_LABELS[e.action] || e.action}
-                    </span>
-                  </td>
-                  <td>{e.detail || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ul className="activity-feed">
+            {entries.map((e) => (
+              <li key={e.id} className="activity-item">
+                <div className={`activity-icon ${activityIcon(e.action)}`}>
+                  {e.action.startsWith('employee') ? (
+                    <IconUser width={16} height={16} />
+                  ) : e.action.startsWith('payroll') ? (
+                    <IconCheck width={16} height={16} />
+                  ) : (
+                    <IconFile width={16} height={16} />
+                  )}
+                </div>
+                <div className="activity-body">
+                  <strong>{ACTION_LABELS[e.action] || e.action}</strong>
+                  <span>
+                    {e.user_name || e.user_email || 'System'}
+                    {e.detail ? ` — ${e.detail}` : ''}
+                  </span>
+                </div>
+                <time className="activity-time">{fmtDateTime(e.created_at)}</time>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </>

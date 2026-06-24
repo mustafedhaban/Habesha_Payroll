@@ -269,21 +269,20 @@ async function importEmployees(req, res) {
       (company_id, full_name, full_name_am, position, basic_salary, transport_allowance, is_pension_exempt, start_date)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
-  // node:sqlite has no transaction() helper, so wrap the batch by hand —
-  // either every valid row commits, or none do.
-  db.exec('BEGIN');
-  try {
-    for (const r of rows) {
-      if (!r.valid) continue;
+  // Wrap the batch in a transaction — either every valid row commits, or none do.
+  const importRows = db.transaction((validRows) => {
+    for (const r of validRows) {
       const d = r.data;
       insert.run(
         session.company_id, d.fullName, d.fullNameAm, d.position,
         d.basicSalary, d.transportAllowance, d.isPensionExempt, d.startDate
       );
     }
-    db.exec('COMMIT');
+  });
+
+  try {
+    importRows(rows.filter((r) => r.valid));
   } catch (err) {
-    db.exec('ROLLBACK');
     return sendError(res, 500, `Import failed and was rolled back: ${err.message}`);
   }
 

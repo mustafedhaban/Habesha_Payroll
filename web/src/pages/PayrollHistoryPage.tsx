@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { PageHero } from '@/components/layout/PageHero';
 import { Api } from '@/lib/api';
 import { fmtMoney, MONTH_NAMES } from '@/lib/format';
 import type { PayrollRunDetail, PayrollRunSummary } from '@/types';
@@ -54,19 +55,18 @@ export function PayrollHistoryPage() {
 
   if (loading) {
     return (
-      <div className="page-header">
-        <h1>Payroll history</h1>
-        <p>Loading…</p>
-      </div>
+      <PageHero eyebrow="Payroll Archive" title="Payroll history" description="Loading runs…" />
     );
   }
 
   return (
     <>
-      <div className="page-header">
-        <h1>Payroll history</h1>
-        <p>Every payroll run your company has filed, with totals and exports.</p>
-      </div>
+      <PageHero
+        eyebrow="Payroll Archive"
+        title="Payroll history"
+        description="Every payroll run your company has filed, with totals and exports."
+        variant="gradient"
+      />
 
       {error ? <div className="alert-banner error">{error}</div> : null}
 
