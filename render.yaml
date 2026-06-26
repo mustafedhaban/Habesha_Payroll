@@ -1,0 +1,22 @@
+# Render Blueprint — https://dashboard.render.com/select-repo?type=blueprint
+# Repo: https://github.com/mustafedhaban/Habesha_Payroll
+
+services:
+  - type: web
+    name: habesha-payroll
+    runtime: node
+    region: frankfurt
+    plan: starter
+    branch: main
+    buildCommand: npm install && npm run build:web
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22.5.0
+    disk:
+      name: payroll-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1

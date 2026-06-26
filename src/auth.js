@@ -68,18 +68,22 @@ function parseCookies(req) {
   return cookies;
 }
 
+function sessionCookieSuffix() {
+  return process.env.NODE_ENV === 'production' ? '; Secure' : '';
+}
+
 function setSessionCookie(res, token) {
   const maxAge = Math.floor(SESSION_TTL_MS / 1000);
   res.setHeader(
     'Set-Cookie',
-    `session=${token}; HttpOnly; Path=/; Max-Age=${maxAge}; SameSite=Lax`
+    `session=${token}; HttpOnly; Path=/; Max-Age=${maxAge}; SameSite=Lax${sessionCookieSuffix()}`
   );
 }
 
 function clearSessionCookie(res) {
   res.setHeader(
     'Set-Cookie',
-    'session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax'
+    `session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax${sessionCookieSuffix()}`
   );
 }
 

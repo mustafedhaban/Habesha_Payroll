@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const url = require('node:url');
 
-const { sendError, readJSONBody } = require('./http-utils');
+const { sendError, sendJSON, readJSONBody } = require('./http-utils');
 const authRoutes = require('./routes/auth');
 const employeeRoutes = require('./routes/employees');
 const payrollRoutes = require('./routes/payroll');
@@ -71,6 +71,11 @@ const server = http.createServer(async (req, res) => {
   const method = req.method;
 
   try {
+    // ---- Health (Render / load balancers) ----
+    if (pathname === '/api/health' && method === 'GET') {
+      return sendJSON(res, 200, { ok: true });
+    }
+
     // ---- Auth ----
     if (pathname === '/api/auth/register' && method === 'POST') {
       return await authRoutes.register(req, res);
