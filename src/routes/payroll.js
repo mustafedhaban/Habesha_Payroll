@@ -2,55 +2,86 @@
 
 const db = require('../db');
 const audit = require('../audit');
+const notifications = require('../notifications');
 const taxEngine = require('../taxEngine');
+const {
+  MONTH_NAMES,
+  validatePeriod,
+  periodLabel,
+  calculateItemsForEmployees,
+  sumPayrollTotals,
+} = require('../payrollCalc');
 const { requireSession, requireAdmin } = require('./guards');
+const { generatePayslipPdf, payslipFilename } = require('../payslipPdf');
+const { buildPayslipZip, payslipZipFilename } = require('../payslipZip');
 const { sendJSON, sendError } = require('../http-utils');
 
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
+function loadActiveEmployees(companyId) {
+  return db
+    .prepare("SELECT * FROM employees WHERE company_id = ? AND employment_status = 'active'")
+    .all(companyId);
+}
+
+function existingRunForPeriod(companyId, month, year) {
+  return db
+    .prepare(
+      'SELECT id FROM payroll_runs WHERE company_id = ? AND period_month = ? AND period_year = ?',
+    )
+    .get(companyId, month, year);
+}
+
+/** POST /api/payroll/preview — calculate without saving. */
+async function previewPayroll(req, res, body) {
+  const session = requireAdmin(req, res);
+  if (!session) return;
+
+  const period = validatePeriod(body.month, body.year);
+  if (period.error) return sendError(res, 400, period.error);
+
+  const employees = loadActiveEmployees(session.company_id);
+  if (employees.length === 0) {
+    return sendError(res, 400, 'Add at least one active employee before previewing payroll.');
+  }
+
+  const items = calculateItemsForEmployees(employees);
+  const totals = sumPayrollTotals(items);
+  const existing = existingRunForPeriod(session.company_id, period.month, period.year);
+
+  sendJSON(res, 200, {
+    preview: true,
+    month: period.month,
+    year: period.year,
+    items,
+    totals,
+    alreadyRun: Boolean(existing),
+  });
+}
 
 /** Run payroll for a given month/year across all active employees. */
 async function runPayroll(req, res, body) {
   const session = requireAdmin(req, res);
   if (!session) return;
 
-  const month = Number(body.month);
-  const year = Number(body.year);
-  if (!Number.isInteger(month) || month < 1 || month > 12) {
-    return sendError(res, 400, 'Month must be an integer from 1 to 12.');
-  }
-  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
-    return sendError(res, 400, 'Year must be a valid 4-digit year.');
-  }
+  const period = validatePeriod(body.month, body.year);
+  if (period.error) return sendError(res, 400, period.error);
+  const { month, year } = period;
 
-  const existingRun = db
-    .prepare(
-      'SELECT id FROM payroll_runs WHERE company_id = ? AND period_month = ? AND period_year = ?'
-    )
-    .get(session.company_id, month, year);
-  if (existingRun) {
+  if (existingRunForPeriod(session.company_id, month, year)) {
     return sendError(
       res,
       409,
-      `Payroll for ${MONTH_NAMES[month - 1]} ${year} has already been run. Delete it first if you need to redo it.`
+      `Payroll for ${MONTH_NAMES[month - 1]} ${year} has already been run. Delete it first if you need to redo it.`,
     );
   }
 
-  const employees = db
-    .prepare(
-      "SELECT * FROM employees WHERE company_id = ? AND employment_status = 'active'"
-    )
-    .all(session.company_id);
-
+  const employees = loadActiveEmployees(session.company_id);
   if (employees.length === 0) {
     return sendError(res, 400, 'Add at least one active employee before running payroll.');
   }
 
   const runResult = db
     .prepare(
-      'INSERT INTO payroll_runs (company_id, period_month, period_year, rate_version) VALUES (?, ?, ?, ?)'
+      'INSERT INTO payroll_runs (company_id, period_month, period_year, rate_version) VALUES (?, ?, ?, ?)',
     )
     .run(session.company_id, month, year, taxEngine.RATE_VERSION);
   const runId = Number(runResult.lastInsertRowid);
@@ -59,53 +90,44 @@ async function runPayroll(req, res, body) {
     `INSERT INTO payroll_items
       (payroll_run_id, employee_id, employee_name, position, basic_salary, transport_allowance,
        exempt_transport, taxable_transport, gross_salary, income_tax, employee_pension, employer_pension, net_pay)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
 
-  const items = employees.map((emp) => {
-    const calc = taxEngine.calculatePayroll({
-      basicSalary: emp.basic_salary,
-      transportAllowance: emp.transport_allowance,
-      isPensionExempt: Boolean(emp.is_pension_exempt),
-    });
+  const items = calculateItemsForEmployees(employees);
+  for (const it of items) {
     insertItem.run(
       runId,
-      emp.id,
-      emp.full_name,
-      emp.position,
-      calc.basicSalary,
-      calc.transportAllowance,
-      calc.exemptTransport,
-      calc.taxableTransport,
-      calc.grossPay,
-      calc.incomeTax,
-      calc.employeePension,
-      calc.employerPension,
-      calc.netPay
+      it.employeeId,
+      it.employeeName,
+      it.position,
+      it.basicSalary,
+      it.transportAllowance,
+      it.exemptTransport,
+      it.taxableTransport,
+      it.grossPay,
+      it.incomeTax,
+      it.employeePension,
+      it.employerPension,
+      it.netPay,
     );
-    return { employeeId: emp.id, employeeName: emp.full_name, ...calc };
-  });
+  }
 
-  const totals = items.reduce(
-    (acc, it) => ({
-      basicSalary: acc.basicSalary + it.basicSalary,
-      transportAllowance: acc.transportAllowance + it.transportAllowance,
-      grossPay: acc.grossPay + it.grossPay,
-      incomeTax: acc.incomeTax + it.incomeTax,
-      employeePension: acc.employeePension + it.employeePension,
-      employerPension: acc.employerPension + it.employerPension,
-      netPay: acc.netPay + it.netPay,
-    }),
-    {
-      basicSalary: 0, transportAllowance: 0, grossPay: 0, incomeTax: 0,
-      employeePension: 0, employerPension: 0, netPay: 0,
-    }
-  );
+  const totals = sumPayrollTotals(items);
 
   audit.record(
     session,
     'payroll.run',
-    `Ran payroll for ${MONTH_NAMES[month - 1]} ${year} (${items.length} employee(s))`
+    `Ran payroll for ${MONTH_NAMES[month - 1]} ${year} (${items.length} employee(s))`,
+  );
+  notifications.notifyCompany(
+    session.company_id,
+    {
+      kind: 'payroll.completed',
+      title: `Payroll completed — ${MONTH_NAMES[month - 1]} ${year}`,
+      body: `${items.length} employee(s) processed. Total net pay ETB ${totals.netPay.toLocaleString()}.`,
+      linkPath: '/payroll-history',
+    },
+    session.user_id,
   );
   sendJSON(res, 201, { runId, month, year, items, totals });
 }
@@ -173,6 +195,16 @@ function deleteRun(req, res, runId) {
     'payroll.deleted',
     `Deleted payroll run for ${MONTH_NAMES[run.period_month - 1]} ${run.period_year}`
   );
+  notifications.notifyCompany(
+    session.company_id,
+    {
+      kind: 'payroll.deleted',
+      title: `Payroll run removed — ${MONTH_NAMES[run.period_month - 1]} ${run.period_year}`,
+      body: 'A payroll period was deleted and can be re-run if needed.',
+      linkPath: '/payroll-history',
+    },
+    session.user_id,
+  );
   sendJSON(res, 200, { ok: true });
 }
 
@@ -225,23 +257,53 @@ function exportRunCSV(req, res, runId) {
   res.end(csv);
 }
 
-/** Printable HTML payslip for one employee in one run. */
-function payslip(req, res, runId, employeeId) {
+function loadRunPayslipItems(runId) {
+  return db
+    .prepare(
+      `SELECT pi.*, e.full_name_am AS employee_name_am
+       FROM payroll_items pi
+       JOIN employees e ON e.id = pi.employee_id
+       WHERE pi.payroll_run_id = ?
+       ORDER BY pi.employee_name`,
+    )
+    .all(runId);
+}
+
+function loadPayslipContext(session, runId, employeeId, res) {
+  const run = getRunOr404(session, runId, res);
+  if (!run) return null;
+
+  const item = db
+    .prepare(
+      `SELECT pi.*, e.full_name_am AS employee_name_am
+       FROM payroll_items pi
+       JOIN employees e ON e.id = pi.employee_id
+       WHERE pi.payroll_run_id = ? AND pi.employee_id = ?`,
+    )
+    .get(runId, employeeId);
+  if (!item) {
+    sendError(res, 404, 'Payslip not found.');
+    return null;
+  }
+
+  const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(session.company_id);
+  const label = periodLabel(run.period_month, run.period_year);
+
+  return { company, run, item, periodLabel: label };
+}
+
+/** HTML preview payslip — kept for on-screen review and browser print fallback. */
+function payslipPreview(req, res, runId, employeeId) {
   const session = requireSession(req, res);
   if (!session) return;
 
-  const run = getRunOr404(session, runId, res);
-  if (!run) return;
+  const ctx = loadPayslipContext(session, runId, employeeId, res);
+  if (!ctx) return;
 
-  const item = db
-    .prepare('SELECT * FROM payroll_items WHERE payroll_run_id = ? AND employee_id = ?')
-    .get(runId, employeeId);
-  if (!item) return sendError(res, 404, 'Payslip not found.');
-
-  const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(session.company_id);
-  const periodLabel = `${MONTH_NAMES[run.period_month - 1]} ${run.period_year}`;
-
-  const fmt = (n) => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const { company, run, item, periodLabel } = ctx;
+  const fmt = (n) =>
+    Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const pdfUrl = `/api/payroll/runs/${runId}/payslip/${employeeId}.pdf`;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -272,10 +334,19 @@ function payslip(req, res, runId, employeeId) {
     cursor: pointer;
   }
   .btn:hover { background: var(--color-primary-hover); }
+  .btn-outline {
+    display: inline-block; background: var(--color-surface); color: var(--color-ink);
+    border: 1px solid var(--color-border); border-radius: 4px; padding: 9px 16px;
+    font-family: var(--font-body); font-size: 14px; font-weight: 600; cursor: pointer;
+    text-decoration: none; margin-left: 8px;
+  }
+  .btn-outline:hover { background: var(--color-bg); }
   .payslip { max-width: 640px; margin: 0 auto; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 4px; padding: 40px; position: relative; }
   .payslip-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid var(--color-ink); padding-bottom: 16px; margin-bottom: 24px; }
   .payslip-header h1 { font-size: 20px; margin: 0 0 4px; }
   .payslip-header .period { font-family: var(--font-mono); color: var(--color-muted); font-size: 13px; }
+  .payslip-header .tin { font-family: var(--font-mono); color: var(--color-muted); font-size: 12px; margin-top: 4px; }
+  .meta-am { font-size: 14px; color: var(--color-muted); margin-top: 4px; }
   .stamp { position: absolute; top: 36px; right: 40px; width: 96px; height: 96px; border: 2.5px solid var(--color-accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; transform: rotate(-12deg); opacity: 0.85; text-align: center; }
   .stamp span { font-family: var(--font-mono); font-size: 9px; line-height: 1.3; color: var(--color-accent); font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
   table.payslip-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
@@ -290,17 +361,22 @@ function payslip(req, res, runId, employeeId) {
 </style>
 </head>
 <body>
-  <div class="print-bar"><button onclick="window.print()" class="btn">Print / Save as PDF</button></div>
+  <div class="print-bar">
+    <a href="${pdfUrl}" class="btn">Download PDF</a>
+    <button onclick="window.print()" class="btn-outline">Print preview</button>
+  </div>
   <div class="payslip">
     <div class="stamp"><span>Proclamation<br/>1395/2026<br/>Compliant</span></div>
     <div class="payslip-header">
       <div>
         <h1>${company.name}</h1>
+        ${company.tin ? `<div class="tin">TIN ${company.tin}</div>` : ''}
         <div class="period">Payslip — ${periodLabel}</div>
       </div>
     </div>
     <div class="meta">
       <strong>${item.employee_name}</strong>${item.position ? ` · ${item.position}` : ''}
+      ${item.employee_name_am ? `<div class="meta-am">${item.employee_name_am}</div>` : ''}
     </div>
     <table class="payslip-table">
       <tr><td>Basic Salary</td><td class="amount">ETB ${fmt(item.basic_salary)}</td></tr>
@@ -328,4 +404,69 @@ function payslip(req, res, runId, employeeId) {
   res.end(html);
 }
 
-module.exports = { runPayroll, listRuns, getRun, deleteRun, exportRunCSV, payslip, MONTH_NAMES };
+/** Server-generated PDF payslip download. */
+async function payslipPdf(req, res, runId, employeeId) {
+  const session = requireSession(req, res);
+  if (!session) return;
+
+  const ctx = loadPayslipContext(session, runId, employeeId, res);
+  if (!ctx) return;
+
+  try {
+    const pdf = await generatePayslipPdf(ctx);
+    const filename = payslipFilename(ctx.run, ctx.item);
+    res.writeHead(200, {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': pdf.length,
+    });
+    res.end(pdf);
+  } catch (err) {
+    console.error('Payslip PDF generation failed:', err);
+    sendError(res, 500, 'Could not generate payslip PDF.');
+  }
+}
+
+/** Download all payslips for a run as a ZIP of PDFs. */
+async function exportPayslipZip(req, res, runId) {
+  const session = requireSession(req, res);
+  if (!session) return;
+
+  const run = getRunOr404(session, runId, res);
+  if (!run) return;
+
+  const items = loadRunPayslipItems(runId);
+  if (items.length === 0) {
+    return sendError(res, 404, 'No payslips found for this run.');
+  }
+
+  const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(session.company_id);
+  const label = periodLabel(run.period_month, run.period_year);
+
+  try {
+    const zip = await buildPayslipZip({ company, run, items, periodLabel: label });
+    const filename = payslipZipFilename(run);
+    res.writeHead(200, {
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': zip.length,
+    });
+    res.end(zip);
+  } catch (err) {
+    console.error('Payslip ZIP generation failed:', err);
+    sendError(res, 500, 'Could not generate payslip ZIP.');
+  }
+}
+
+module.exports = {
+  runPayroll,
+  previewPayroll,
+  listRuns,
+  getRun,
+  deleteRun,
+  exportRunCSV,
+  exportPayslipZip,
+  payslipPreview,
+  payslipPdf,
+  MONTH_NAMES,
+};

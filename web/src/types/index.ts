@@ -139,6 +139,25 @@ export interface ActivityEntry {
   user_name: string | null;
 }
 
+export interface NotificationItem {
+  id: number;
+  kind: string;
+  title: string;
+  body: string | null;
+  link_path: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface NotificationsData {
+  items: NotificationItem[];
+  unread: number;
+}
+
+export interface ProfileUpdateResult {
+  user: User;
+}
+
 export interface PayrollRunResult {
   runId: number;
   month: number;
@@ -146,6 +165,7 @@ export interface PayrollRunResult {
   items: Array<{
     employeeId: number;
     employeeName: string;
+    employeeNameAm?: string | null;
     basicSalary: number;
     transportAllowance: number;
     exemptTransport: number;
@@ -165,4 +185,13 @@ export interface PayrollRunResult {
     employerPension: number;
     netPay: number;
   };
+}
+
+export interface PayrollPreviewResult {
+  preview: true;
+  month: number;
+  year: number;
+  alreadyRun: boolean;
+  items: PayrollRunResult['items'];
+  totals: PayrollRunResult['totals'];
 }

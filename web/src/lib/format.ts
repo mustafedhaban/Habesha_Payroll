@@ -35,3 +35,20 @@ export const MONTH_NAMES = [
   'November',
   'December',
 ] as const;
+
+/** Compact relative time for notification lists. */
+export function fmtRelativeTime(s: string | null | undefined): string {
+  if (!s) return '';
+  const iso = s.includes('T') ? s : `${s.replace(' ', 'T')}Z`;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return s;
+  const diffMs = Date.now() - d.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return fmtDateTime(s);
+}

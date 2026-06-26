@@ -3,6 +3,7 @@
 const db = require('../db');
 const auth = require('../auth');
 const audit = require('../audit');
+const notifications = require('../notifications');
 const { requireSession, requireAdmin } = require('./guards');
 const { sendJSON, sendError, readJSONBody } = require('../http-utils');
 
@@ -65,6 +66,17 @@ async function invite(req, res) {
   ).run(session.company_id, email, role, token, session.user_id, expiresAt);
 
   audit.record(session, 'team.invited', `Invited ${email} as ${role}`);
+
+  notifications.notifyCompany(
+    session.company_id,
+    {
+      kind: 'team.invited',
+      title: 'New teammate invited',
+      body: `${email} was invited as ${role}.`,
+      linkPath: '/settings',
+    },
+    session.user_id,
+  );
 
   sendJSON(res, 201, {
     email,

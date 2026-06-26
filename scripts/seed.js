@@ -18,6 +18,7 @@
 const db = require('../src/db');
 const auth = require('../src/auth');
 const taxEngine = require('../src/taxEngine');
+const notifications = require('../src/notifications');
 
 const DEMO = {
   companyName: 'Habesha Demo Trading PLC',
@@ -48,6 +49,7 @@ const EMPLOYEES = [
 const RUNS = [
   { month: 3, year: 2026 },
   { month: 4, year: 2026 },
+  { month: 5, year: 2026 },
 ];
 
 function reset() {
@@ -75,9 +77,11 @@ function seed() {
   );
 
   const { hash, salt } = auth.hashPassword(DEMO.password);
-  db.prepare(
-    'INSERT INTO users (company_id, email, password_hash, password_salt, full_name) VALUES (?, ?, ?, ?, ?)'
-  ).run(companyId, DEMO.email, hash, salt, DEMO.fullName);
+  const userId = Number(
+    db.prepare(
+      "INSERT INTO users (company_id, email, password_hash, password_salt, full_name, role) VALUES (?, ?, ?, ?, ?, 'admin')"
+    ).run(companyId, DEMO.email, hash, salt, DEMO.fullName).lastInsertRowid
+  );
 
   const insertEmp = db.prepare(
     `INSERT INTO employees
@@ -122,6 +126,19 @@ function seed() {
   }
 
   const activeCount = EMPLOYEES.filter((e) => e.employment_status === 'active').length;
+  notifications.notifyUser(userId, companyId, {
+    kind: 'payroll.completed',
+    title: 'Payroll completed — May 2026',
+    body: `${activeCount} employees processed for the demo period.`,
+    linkPath: '/payroll-history',
+  });
+  notifications.notifyUser(userId, companyId, {
+    kind: 'rate_schedule.verified',
+    title: 'Tax rate schedule verified',
+    body: `Schedule ${taxEngine.RATE_VERSION} confirmed for demo workspace.`,
+    linkPath: '/settings',
+  });
+
   console.log('\nSeed complete.');
   console.log('--------------------------------------------------');
   console.log(`Company:   ${DEMO.companyName} (TIN ${DEMO.tin})`);

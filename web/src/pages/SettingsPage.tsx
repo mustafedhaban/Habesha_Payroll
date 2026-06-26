@@ -3,10 +3,10 @@ import { PageHero } from '@/components/layout/PageHero';
 import { Api } from '@/lib/api';
 import { fmtDateTime } from '@/lib/format';
 import { useAuth } from '@/hooks/use-auth';
-import type { InviteResult, RateSchedule, Role, TeamData } from '@/types';
+import type { InviteResult, ProfileUpdateResult, RateSchedule, Role, Session, TeamData } from '@/types';
 
 export function SettingsPage() {
-  const { session } = useAuth();
+  const { session, refresh } = useAuth();
   const isAdmin = session?.user.role === 'admin';
 
   const [team, setTeam] = useState<TeamData | null>(null);
@@ -80,6 +80,23 @@ export function SettingsPage() {
       />
 
       {error ? <div className="alert-banner error">{error}</div> : null}
+
+      <div className="card" id="profile">
+        <h2 className="mt-0">Your profile</h2>
+        {session ? <ProfileForm session={session} onSaved={refresh} /> : <p>Loading…</p>}
+      </div>
+
+      <div className="card">
+        <h2 className="mt-0">Company profile</h2>
+        <CompanyProfileForm
+          initialName={session?.company.name ?? ''}
+          initialTin={session?.company.tin ?? ''}
+          isAdmin={Boolean(isAdmin)}
+          onSaved={async () => {
+            await refresh();
+          }}
+        />
+      </div>
 
       <div className="card">
         <h2 className="mt-0">Team members</h2>
@@ -218,5 +235,215 @@ export function SettingsPage() {
         ) : null}
       </div>
     </>
+  );
+}
+
+function ProfileForm({
+  session,
+  onSaved,
+}: {
+  session: Session;
+  onSaved: () => Promise<void>;
+}) {
+  const [fullName, setFullName] = useState(session.user.fullName || '');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
+  const [passwordSaved, setPasswordSaved] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+
+  useEffect(() => {
+    setFullName(session.user.fullName || '');
+  }, [session.user.fullName]);
+
+  async function onSaveProfile(e: FormEvent) {
+    e.preventDefault();
+    setProfileBusy(true);
+    setProfileSaved(false);
+    setProfileError('');
+    try {
+      await Api.put<ProfileUpdateResult>('/api/user/profile', { fullName });
+      await onSaved();
+      setProfileSaved(true);
+    } catch (err) {
+      setProfileError(err instanceof Error ? err.message : 'Could not update profile.');
+    } finally {
+      setProfileBusy(false);
+    }
+  }
+
+  async function onChangePassword(e: FormEvent) {
+    e.preventDefault();
+    setPasswordBusy(true);
+    setPasswordSaved(false);
+    setPasswordError('');
+    try {
+      await Api.post('/api/user/change-password', { currentPassword, newPassword });
+      setCurrentPassword('');
+      setNewPassword('');
+      setPasswordSaved(true);
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : 'Could not change password.');
+    } finally {
+      setPasswordBusy(false);
+    }
+  }
+
+  return (
+    <div className="profile-sections">
+      <form onSubmit={onSaveProfile}>
+        <p className="help-text" style={{ marginTop: 0 }}>
+          Your display name appears in the top bar and activity log.
+        </p>
+        {profileError ? <div className="alert-banner error">{profileError}</div> : null}
+        {profileSaved ? (
+          <div className="alert-banner success" style={{ marginBottom: 16 }}>
+            Profile updated.
+          </div>
+        ) : null}
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="profile-name">Display name</label>
+            <input
+              id="profile-name"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="profile-email">Email</label>
+            <input id="profile-email" value={session.user.email} disabled />
+          </div>
+        </div>
+        <button type="submit" className="btn btn-secondary" disabled={profileBusy}>
+          Save profile
+        </button>
+      </form>
+
+      <form onSubmit={onChangePassword} className="profile-password-form">
+        <h3>Change password</h3>
+        {passwordError ? <div className="alert-banner error">{passwordError}</div> : null}
+        {passwordSaved ? (
+          <div className="alert-banner success" style={{ marginBottom: 16 }}>
+            Password updated.
+          </div>
+        ) : null}
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="current-password">Current password</label>
+            <input
+              id="current-password"
+              type="password"
+              autoComplete="current-password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              required
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="new-password">New password</label>
+            <input
+              id="new-password"
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+            />
+          </div>
+        </div>
+        <button type="submit" className="btn btn-secondary" disabled={passwordBusy}>
+          Update password
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function CompanyProfileForm({
+  initialName,
+  initialTin,
+  isAdmin,
+  onSaved,
+}: {
+  initialName: string;
+  initialTin: string;
+  isAdmin: boolean;
+  onSaved: () => Promise<void>;
+}) {
+  const [name, setName] = useState(initialName);
+  const [tin, setTin] = useState(initialTin);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setName(initialName);
+    setTin(initialTin);
+  }, [initialName, initialTin]);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!isAdmin) return;
+    setBusy(true);
+    setSaved(false);
+    try {
+      await Api.put<{ company: { name: string; tin: string | null } }>('/api/company', {
+        name,
+        tin,
+      });
+      await onSaved();
+      setSaved(true);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not save company profile.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={onSubmit}>
+      <p className="help-text" style={{ marginTop: 0 }}>
+        Shown on payslips and exports. TIN helps finance teams match ERCA records.
+      </p>
+      {saved ? (
+        <div className="alert-banner success" style={{ marginBottom: 16 }}>
+          Company profile updated.
+        </div>
+      ) : null}
+      <div className="field-row">
+        <div className="field">
+          <label htmlFor="co-name">Company name</label>
+          <input
+            id="co-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={!isAdmin}
+            required
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="co-tin">TIN (tax ID)</label>
+          <input
+            id="co-tin"
+            value={tin}
+            onChange={(e) => setTin(e.target.value)}
+            disabled={!isAdmin}
+            placeholder="e.g. 0012345678"
+          />
+        </div>
+      </div>
+      {isAdmin ? (
+        <button type="submit" className="btn btn-secondary" disabled={busy}>
+          Save company profile
+        </button>
+      ) : (
+        <span className="badge badge-muted">View-only</span>
+      )}
+    </form>
   );
 }

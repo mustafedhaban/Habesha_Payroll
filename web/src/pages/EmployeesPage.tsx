@@ -514,7 +514,20 @@ export function EmployeesPage() {
         {employees.length === 0 ? (
           <div className="empty-state">
             <h3>No employees yet</h3>
-            <p>Add your first employee to start running payroll.</p>
+            <p>Add your first employee or import a CSV to start running payroll.</p>
+            {isAdmin ? (
+              <>
+                <br />
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button type="button" className="btn" onClick={() => openForm(null)}>
+                    Add employee
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={openImport}>
+                    Import CSV
+                  </button>
+                </div>
+              </>
+            ) : null}
           </div>
         ) : (
           <table className="data-table">

@@ -2,6 +2,7 @@
 
 const db = require('../db');
 const audit = require('../audit');
+const notifications = require('../notifications');
 const taxEngine = require('../taxEngine');
 const { requireSession, requireAdmin } = require('./guards');
 const { sendJSON, sendError, readJSONBody } = require('../http-utils');
@@ -44,6 +45,17 @@ async function verify(req, res) {
   ).run(taxEngine.RATE_VERSION, today, notes);
 
   audit.record(session, 'rate_schedule.verified', `Verified rate schedule ${taxEngine.RATE_VERSION}`);
+
+  notifications.notifyCompany(
+    session.company_id,
+    {
+      kind: 'rate_schedule.verified',
+      title: 'Tax rate schedule verified',
+      body: `Schedule ${taxEngine.RATE_VERSION} confirmed for ${today}.${notes ? ` ${notes}` : ''}`,
+      linkPath: '/settings',
+    },
+    session.user_id,
+  );
 
   sendJSON(res, 201, {
     activeVersion: taxEngine.RATE_VERSION,

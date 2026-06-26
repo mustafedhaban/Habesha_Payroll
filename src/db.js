@@ -123,6 +123,19 @@ db.exec(`
     detail TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
+
+  -- In-app notifications (per user, scoped to company)
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT,
+    link_path TEXT,
+    read_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 // --- Migrations for databases created before A1 (transport allowance) -------

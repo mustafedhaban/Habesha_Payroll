@@ -12,6 +12,9 @@ const payrollRoutes = require('./routes/payroll');
 const teamRoutes = require('./routes/team');
 const rateScheduleRoutes = require('./routes/rateSchedule');
 const activityRoutes = require('./routes/activity');
+const companyRoutes = require('./routes/company');
+const profileRoutes = require('./routes/profile');
+const notificationRoutes = require('./routes/notifications');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, '..', 'web', 'dist');
@@ -113,6 +116,15 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ---- Payroll runs ----
+    if (pathname === '/api/payroll/preview' && method === 'POST') {
+      let body;
+      try {
+        body = await readJSONBody(req);
+      } catch (err) {
+        return sendError(res, 400, err.message);
+      }
+      return await payrollRoutes.previewPayroll(req, res, body);
+    }
     if (pathname === '/api/payroll/runs' && method === 'GET') {
       return payrollRoutes.listRuns(req, res);
     }
@@ -136,9 +148,17 @@ const server = http.createServer(async (req, res) => {
     if (m && method === 'GET') {
       return payrollRoutes.exportRunCSV(req, res, Number(m[1]));
     }
+    m = pathname.match(/^\/api\/payroll\/runs\/(\d+)\/payslips\.zip$/);
+    if (m && method === 'GET') {
+      return payrollRoutes.exportPayslipZip(req, res, Number(m[1]));
+    }
+    m = pathname.match(/^\/api\/payroll\/runs\/(\d+)\/payslip\/(\d+)\.pdf$/);
+    if (m && method === 'GET') {
+      return payrollRoutes.payslipPdf(req, res, Number(m[1]), Number(m[2]));
+    }
     m = pathname.match(/^\/api\/payroll\/runs\/(\d+)\/payslip\/(\d+)$/);
     if (m && method === 'GET') {
-      return payrollRoutes.payslip(req, res, Number(m[1]), Number(m[2]));
+      return payrollRoutes.payslipPreview(req, res, Number(m[1]), Number(m[2]));
     }
 
     // ---- Team (multi-user roles) ----
@@ -157,9 +177,37 @@ const server = http.createServer(async (req, res) => {
       return await rateScheduleRoutes.verify(req, res);
     }
 
+    // ---- Company profile ----
+    if (pathname === '/api/company' && method === 'GET') {
+      return companyRoutes.getCompany(req, res);
+    }
+    if (pathname === '/api/company' && method === 'PUT') {
+      return await companyRoutes.updateCompany(req, res);
+    }
+
     // ---- Activity / audit log ----
     if (pathname === '/api/activity' && method === 'GET') {
       return activityRoutes.list(req, res);
+    }
+
+    // ---- User profile ----
+    if (pathname === '/api/user/profile' && method === 'PUT') {
+      return await profileRoutes.updateProfile(req, res);
+    }
+    if (pathname === '/api/user/change-password' && method === 'POST') {
+      return await profileRoutes.changePassword(req, res);
+    }
+
+    // ---- Notifications ----
+    if (pathname === '/api/notifications' && method === 'GET') {
+      return notificationRoutes.list(req, res);
+    }
+    if (pathname === '/api/notifications/read-all' && method === 'POST') {
+      return notificationRoutes.markAllRead(req, res);
+    }
+    m = pathname.match(/^\/api\/notifications\/(\d+)\/read$/);
+    if (m && method === 'POST') {
+      return notificationRoutes.markRead(req, res, Number(m[1]));
     }
 
     // ---- Static frontend ----

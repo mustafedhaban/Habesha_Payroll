@@ -76,13 +76,21 @@ export function PayrollHistoryPage() {
             <h2 className="mt-0">
               {MONTH_NAMES[detail.run.period_month - 1]} {detail.run.period_year}
             </h2>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => setDetail(null)}
-            >
-              Close
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <a
+                href={`/api/payroll/runs/${detail.run.id}/payslips.zip`}
+                className="btn btn-sm"
+              >
+                All payslips (ZIP)
+              </a>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setDetail(null)}
+              >
+                Close
+              </button>
+            </div>
           </div>
           <table className="data-table">
             <thead>
@@ -105,14 +113,20 @@ export function PayrollHistoryPage() {
                   <td className="amount">
                     <strong>{fmtMoney(it.net_pay)}</strong>
                   </td>
-                  <td style={{ textAlign: 'right' }}>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <a
+                      href={`/api/payroll/runs/${detail.run.id}/payslip/${it.employee_id}.pdf`}
+                      className="btn btn-sm"
+                    >
+                      PDF
+                    </a>{' '}
                     <a
                       href={`/api/payroll/runs/${detail.run.id}/payslip/${it.employee_id}`}
                       target="_blank"
                       rel="noreferrer"
                       className="btn btn-secondary btn-sm"
                     >
-                      Payslip
+                      Preview
                     </a>
                   </td>
                 </tr>

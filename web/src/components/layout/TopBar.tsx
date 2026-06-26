@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/use-auth';
+import { NotificationPanel } from '@/components/layout/NotificationPanel';
+import { Api } from '@/lib/api';
 import { IconBell, IconMoon, IconSearch, IconSun } from '@/components/ui/Icons';
+import type { NotificationsData } from '@/types';
 
 const ROUTE_META: Record<string, { workspace: string; page: string }> = {
   '/dashboard': { workspace: 'Command Center', page: 'Operating Dashboard' },
@@ -20,15 +23,50 @@ function initials(name: string) {
     .join('');
 }
 
+const THEME_KEY = 'habesha-theme';
+
+function readStoredTheme(): boolean {
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    if (stored === 'dark') return true;
+    if (stored === 'light') return false;
+  } catch {
+    /* ignore */
+  }
+  return document.documentElement.dataset.theme === 'dark';
+}
+
 export function TopBar() {
   const { session } = useAuth();
   const location = useLocation();
   const meta = ROUTE_META[location.pathname] ?? { workspace: 'Workspace', page: 'Dashboard' };
-  const [dark, setDark] = useState(() => document.documentElement.dataset.theme === 'dark');
+  const [dark, setDark] = useState(readStoredTheme);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
+
+  const refreshUnread = useCallback(async () => {
+    try {
+      const data = await Api.get<NotificationsData>('/api/notifications');
+      setUnread(data.unread);
+    } catch {
+      setUnread(0);
+    }
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    try {
+      localStorage.setItem(THEME_KEY, dark ? 'dark' : 'light');
+    } catch {
+      /* ignore */
+    }
   }, [dark]);
+
+  useEffect(() => {
+    refreshUnread();
+    const id = window.setInterval(refreshUnread, 60_000);
+    return () => window.clearInterval(id);
+  }, [refreshUnread]);
 
   if (!session) return null;
 
@@ -57,17 +95,32 @@ export function TopBar() {
         >
           {dark ? <IconSun width={18} height={18} /> : <IconMoon width={18} height={18} />}
         </button>
-        <button type="button" className="topbar-icon-btn topbar-icon-btn-badge" aria-label="Notifications">
-          <IconBell width={18} height={18} />
-          <span className="topbar-badge">3</span>
-        </button>
-        <div className="topbar-user">
+        <div className="topbar-notifications-wrap">
+          <button
+            type="button"
+            className="topbar-icon-btn topbar-icon-btn-badge"
+            aria-label="Notifications"
+            aria-expanded={notificationsOpen}
+            onClick={() => setNotificationsOpen((open) => !open)}
+          >
+            <IconBell width={18} height={18} />
+            {unread > 0 ? (
+              <span className="topbar-badge">{unread > 9 ? '9+' : unread}</span>
+            ) : null}
+          </button>
+          <NotificationPanel
+            open={notificationsOpen}
+            onClose={() => setNotificationsOpen(false)}
+            onUnreadChange={setUnread}
+          />
+        </div>
+        <Link to="/settings#profile" className="topbar-user" aria-label="Your profile">
           <div className="topbar-avatar" aria-hidden>{initials(displayName)}</div>
           <div className="topbar-user-text">
             <strong>{displayName}</strong>
             <span>{roleLabel}</span>
           </div>
-        </div>
+        </Link>
       </div>
     </header>
   );
