@@ -5,93 +5,109 @@ run monthly payroll, and get PAYE income tax and pension contributions
 calculated automatically under **Income Tax Proclamation No. 1395/2026** and
 the **Private Organization Employees' Pension Proclamation No. 1268/2022**.
 
-This is a working MVP, not a finished product — see **Limitations & next
-steps** before showing it to real customers.
+This is a working MVP, not a finished product. See [docs/27-known-limitations.md](docs/27-known-limitations.md) before showing it to real customers.
 
-## Why zero dependencies
+**Full documentation:** [docs/README.md](docs/README.md)
 
-This was built in a sandboxed environment with no access to the npm
-registry, so it intentionally uses **only Node.js built-ins**:
-
-- `node:http` for the server (no Express)
-- `node:sqlite` for persistence (Node's built-in SQLite, stable enough for
-  an MVP, still labeled experimental upstream)
-- `node:crypto` for password hashing (scrypt) and session tokens
-- Hand-written router, cookie parsing, and CSV writer
-
-This means `npm install` installs nothing and the app runs immediately —
-genuinely useful for demoing on a flight with no wifi. For production,
-see the **Before you take this to production** section below.
+---
 
 ## Quick start
 
+### Prerequisites
+
+- Node.js ≥ 22.5.0
+- npm
+
+### Install & run (development)
+
+Use two terminals:
+
 ```bash
-npm install      # no-op — there's nothing to install
-npm start        # starts the server on http://localhost:3000
+# Terminal 1 — API server (http://localhost:3000)
+npm install
+npm start
+
+# Terminal 2 — React dev server (http://localhost:5173, proxies /api)
+npm run dev:web
 ```
 
-Then open `http://localhost:3000` in a browser, click **Register company**,
-and create an account.
+Open **http://localhost:5173**, register a company, and sign in.
 
-Run the tax engine test suite at any time:
+### Production build
+
+```bash
+npm install
+npm run build:web   # builds web/dist
+npm start           # serves API + SPA on PORT (default 3000)
+```
+
+### Demo data
+
+```bash
+node scripts/seed.js          # add demo company if missing
+node scripts/seed.js --reset  # rebuild demo company
+```
+
+Demo login (after seed): `demo@habesha.test` / `demo1234`
+
+### Tests
 
 ```bash
 npm test
 ```
 
-All 7 tests check the calculation engine against worked examples published
-under the 2026 tax reform (e.g. an ETB 15,000/month salary should produce
-exactly ETB 3,200 PAYE, ETB 1,050 employee pension, and ETB 10,750 net pay).
+26 automated tests cover the tax engine, payroll helpers, CSV parsing, PDF/ZIP generation, and notifications. The ETB 15,000/month worked example (ETB 3,200 PAYE, ETB 1,050 employee pension, ETB 10,750 net) is included.
+
+---
 
 ## What's in the MVP
 
-- **Multi-tenant accounts** — each company registers and only sees its own
-  data (session-based auth, scrypt-hashed passwords).
-- **Employee records** — name (with optional Amharic name field), position,
-  gross salary, pension-exemption flag for foreign nationals, status.
-- **Payroll runs** — pick a month/year, and it calculates PAYE + pension for
-  every active employee in one click. Duplicate runs for the same period
-  are blocked; mistaken runs can be deleted and redone.
-- **Payslips** — a clean, printable HTML payslip per employee per run
-  (use the browser's "Print → Save as PDF" — see note below on why this
-  isn't a server-generated PDF yet).
-- **CSV export** — a per-run export formatted for handing to your
-  accountant or filing with ERCA / the pension fund.
-- **Dashboard** — headline stats: active employees, current monthly payroll
-  cost, last run filed.
+| Area | Features |
+|------|----------|
+| **Accounts** | Multi-tenant register/login, scrypt passwords, session cookies, forgot/reset password (dev link on screen) |
+| **Team** | Admin / viewer roles, teammate invites (dev link on screen) |
+| **Employees** | CRUD, Amharic names, basic salary + transport allowance, pension-exempt flag, CSV bulk import |
+| **Payroll** | Preview then run, one run per period, delete and re-run, active employees only |
+| **Tax engine** | PAYE 6 brackets, pension 7%/11% on basic (cap ETB 15,000), transport allowance exemption |
+| **Outputs** | HTML payslip preview, PDF payslip, ZIP of all PDFs, CSV export per run |
+| **Compliance** | Audit log, rate-schedule verification banner, in-app notifications |
+| **Settings** | Company name/TIN, user profile, password change |
+
+**Not yet built:** subscription billing (Chapa/SantimPay), outbound email, production deployment config, overtime/bonuses/leave.
+
+See [docs/09-feature-list.md](docs/09-feature-list.md) for the full implemented vs planned list.
+
+---
 
 ## Architecture
 
 ```
-src/
-  server.js        — HTTP server + routing (no framework)
-  db.js             — SQLite schema (companies, users, sessions, employees,
-                       payroll_runs, payroll_items)
-  auth.js           — password hashing, session cookies
-  taxEngine.js      — PAYE + pension calculation (see below)
-  http-utils.js     — JSON body parsing / response helpers
-  routes/
-    auth.js, employees.js, payroll.js
-test/
-  taxEngine.test.js — verifies the engine against published figures
-public/
-  index.html, dashboard.html, employees.html,
-  payroll-run.html, payroll-history.html
-  css/styles.css    — design tokens (teal + ochre palette)
-  js/               — vanilla JS, one file per page + shared api.js
+src/                    # Node backend (CommonJS, no Express)
+  server.js             # HTTP router + static SPA
+  db.js                 # SQLite schema (better-sqlite3)
+  taxEngine.js          # PAYE + pension + transport allowance
+  routes/               # auth, employees, payroll, team, …
+web/                    # React 19 + TypeScript + Vite
+  src/pages/            # Dashboard, employees, payroll, settings, …
+  src/lib/api.ts        # API client (pages use this only)
+test/                   # Unit tests (node:test)
+docs/                   # Product & technical documentation
+data/payroll.db         # Runtime database (created on first start)
 ```
+
+Details: [docs/14-system-architecture.md](docs/14-system-architecture.md)
+
+---
 
 ## The tax engine — the actual IP of this product
 
 `src/taxEngine.js` is deliberately the most carefully isolated file in the
 codebase, because **tracking Ethiopian tax law accurately and updating fast
-is the entire competitive advantage** of a local payroll product over a
-generic spreadsheet or a foreign tool that will never bother to track ERCA
-directives.
+is the entire competitive advantage** of a local payroll product.
 
-Current rules encoded (per Proclamation No. 1395/2026):
+**Rate version:** `2026-Proclamation-1395`
 
-| Monthly income (ETB) | Rate | Deduction |
+| Monthly taxable income (ETB) | Rate | Deduction |
 |---|---|---|
 | 0 – 2,000 | 0% | 0 |
 | 2,000 – 4,000 | 15% | 300 |
@@ -100,52 +116,65 @@ Current rules encoded (per Proclamation No. 1395/2026):
 | 10,000 – 14,000 | 30% | 1,350 |
 | 14,000+ | 35% | 2,050 |
 
-Pension: 7% employee / 11% employer, computed on gross salary capped at an
-ETB 15,000 base. Foreign nationals with no Ethiopian origin can be flagged
-exempt.
+**Pension:** 7% employee / 11% employer on **basic salary**, capped at ETB 15,000/month. Foreign nationals can be flagged pension-exempt.
 
-**When the rules next change** (and they will — this is the second major
-reform in under two years), update the constants in `taxEngine.js`, add a
-new test case with the published worked example for the new rates, and
-ship it. That turnaround time, not the UI, is what customers are paying for.
+**Transport allowance:** non-taxable up to the lower of ETB 2,200/month and 25% of basic salary; excess is taxable. Pension base is unaffected.
+
+**When rules change:** update `src/taxEngine.js`, add tests in `test/taxEngine.test.js` first, bump `RATE_VERSION`, run `npm test`. See [docs/23-testing-strategy.md](docs/23-testing-strategy.md).
+
+---
+
+## Documentation
+
+| Audience | Start here |
+|----------|------------|
+| Everyone | [docs/README.md](docs/README.md) |
+| Product / business | [docs/01-product-brief.md](docs/01-product-brief.md) |
+| Engineers | [docs/14-system-architecture.md](docs/14-system-architecture.md) · [docs/17-api-specification.md](docs/17-api-specification.md) |
+| Admins (users) | [docs/26-admin-manual.md](docs/26-admin-manual.md) |
+| Deployment | [docs/24-deployment-guide.md](docs/24-deployment-guide.md) |
+
+Planning docs (may lag the code in places): `habesha-payroll-build-plan.md`, `habesha-payroll-mvp-plan.md`
+
+---
 
 ## Limitations & next steps
 
-Being upfront about what's *not* done, in rough priority order for getting
-this to a real pilot customer:
+High-priority gaps before a paying pilot:
 
-1. **Payslips are HTML, not true PDFs.** Browser print-to-PDF works fine for
-   now, but a real product should generate PDFs server-side. That needs a
-   PDF library (e.g. `pdfkit`) — trivial once you have normal npm access.
-2. **`node:sqlite` is labeled experimental by Node.js.** Fine for an MVP
-   and even an early pilot with a handful of companies; for real scale,
-   plan to migrate to `better-sqlite3` or Postgres.
-3. **No payment collection yet.** The natural next step is wiring up
-   **Chapa** or **SantimPay** so companies can pay their subscription in
-   Birr from inside the app — both have simple REST APIs.
-4. **Gregorian calendar only.** Periods are stored as Gregorian month/year,
-   which matches how ERCA's monthly withholding filings actually work, but
-   you may want an Ethiopian-calendar display toggle for some customers.
-5. **No allowances, overtime, bonuses, or leave deductions yet** — only flat
-   gross salary. Real Ethiopian payroll also needs non-taxable transport
-   allowance handling, which is a common next-feature request.
-6. **No audit log or multi-user-per-company roles** — right now one login
-   per company. Add roles (admin/viewer) before selling to anyone with
-   more than one finance staffer.
-7. **No automated bracket-change alerts.** Consider a small admin-only page
-   that flags "rate schedule unchanged for N months" as a reminder to
-   verify nothing's changed at ERCA.
+1. **Outbound email** — password reset and invite links are shown on screen, not emailed ([Phase B4](docs/08-product-roadmap.md))
+2. **Production deployment** — HTTPS, process manager, backups ([docs/24-deployment-guide.md](docs/24-deployment-guide.md))
+3. **Billing** — Chapa or SantimPay integration not implemented
+4. **Independent accuracy review** — get an Ethiopian accountant to sign off on the tax engine (**Needs Confirmation**)
+5. **Gregorian calendar only** — no Ethiopian calendar display toggle
+6. **Payroll scope** — no overtime, bonuses, leave deductions, or bank-file exports yet
+
+Full list: [docs/27-known-limitations.md](docs/27-known-limitations.md)  
+Roadmap: [docs/08-product-roadmap.md](docs/08-product-roadmap.md)
+
+---
 
 ## Before you take this to production
 
-- Move off `node:sqlite` to a battle-tested DB.
-- Put this behind HTTPS (e.g. behind Caddy/Nginx or a platform like
-  Render/Railway/Fly.io that handles TLS for you).
-- Set a real `PORT` and run under a process manager (`pm2`, systemd, or the
-  hosting platform's built-in one) instead of `node src/server.js` directly.
-- Add rate limiting on `/api/auth/login` to slow down credential stuffing.
-- Rotate session secrets / add session revocation on password change.
-- Get a second set of eyes (ideally an Ethiopian accountant or ERCA-familiar
-  auditor) to sign off on the tax engine before anyone runs real payroll
-  through it — this is a compliance product; a bug here has real
-  consequences for a real business.
+- Deploy behind **HTTPS** (Render, Railway, Fly.io, or reverse proxy)
+- Run under a **process manager** (`pm2`, systemd, or platform supervisor)
+- Configure **automated backups** for `data/payroll.db`
+- Add **login rate limiting** on `/api/auth/login`
+- Wire up **transactional email** for reset/invite flows
+- Get **accountant sign-off** on tax calculations before real payroll runs
+
+See [docs/24-deployment-guide.md](docs/24-deployment-guide.md) for a deployment checklist.
+
+---
+
+## Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `better-sqlite3` | SQLite database |
+| `pdfkit` | PDF payslips |
+| `jszip` | Bulk payslip ZIP archives |
+
+Frontend (`web/`): React 19, Vite 6, React Router 7, TypeScript.
+
+The HTTP server uses **Node built-ins only** (`node:http`, `node:crypto`) — no Express.
