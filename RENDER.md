@@ -12,7 +12,7 @@ Uses [`render.yaml`](./render.yaml) in this repo.
 2. Click **New +** → **Blueprint**
 3. Connect GitHub account and select **mustafedhaban/Habesha_Payroll**
 4. Render reads `render.yaml` and creates the **habesha-payroll** web service
-5. Confirm **Starter** plan (required for persistent disk — SQLite lives in `data/`)
+5. Confirm plan: **Free** works for demos; use **Starter** if you need SQLite to survive redeploys
 6. Click **Apply** and wait for the first deploy (~5–10 min)
 
 Your app will be at: `https://habesha-payroll.onrender.com` (or similar).
@@ -59,8 +59,7 @@ Without a disk, SQLite data is lost on every redeploy.
 
 | Issue | Fix |
 |-------|-----|
-| Build fails on `better-sqlite3` | Ensure `NODE_VERSION=22.5.0` |
-| 503 / “Frontend not built” | Check build logs; `npm run build:web` must succeed |
+| Build fails / 404 on `/` | Ensure build command is `npm install && npm run build:web` (needs `--include=dev` for Vite — fixed in `package.json`) |
 | Sessions lost after redeploy | Attach persistent disk at path above |
 | Login works locally but not on Render | HTTPS requires `NODE_ENV=production` (Secure cookies) |
 

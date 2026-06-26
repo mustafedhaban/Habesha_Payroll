@@ -42,22 +42,23 @@ function serveStatic(req, res, pathname) {
 
   fs.readFile(fullPath, (err, data) => {
     if (err) {
-      // SPA fallback — client routes like /dashboard have no matching file
-      if (path.extname(safePath)) {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        return res.end('Not found');
-      }
+      const ext = path.extname(safePath);
       const indexPath = path.join(PUBLIC_DIR, 'index.html');
-      return fs.readFile(indexPath, (indexErr, indexData) => {
-        if (indexErr) {
-          res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
-          return res.end(
-            'Frontend not built. Run: npm run build:web\nThen restart the server.',
-          );
-        }
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(indexData);
-      });
+      // SPA routes and missing index.html — serve index or explain build failure
+      if (!ext || ext === '.html') {
+        return fs.readFile(indexPath, (indexErr, indexData) => {
+          if (indexErr) {
+            res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
+            return res.end(
+              'Frontend not built. Run: npm run build:web\nThen restart the server.',
+            );
+          }
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(indexData);
+        });
+      }
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      return res.end('Not found');
     }
     const ext = path.extname(fullPath);
     res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });

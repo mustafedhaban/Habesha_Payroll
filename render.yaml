@@ -6,7 +6,7 @@ services:
     name: habesha-payroll
     runtime: node
     region: frankfurt
-    plan: starter
+    plan: free
     branch: main
     buildCommand: npm install && npm run build:web
     startCommand: npm start
@@ -16,7 +16,3 @@ services:
         value: production
       - key: NODE_VERSION
         value: 22.5.0
-    disk:
-      name: payroll-data
-      mountPath: /opt/render/project/src/data
-      sizeGB: 1
